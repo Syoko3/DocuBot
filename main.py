@@ -1,5 +1,5 @@
 """
-CLI runner for the DocuBot tinker activity.
+CLI runner for the DocuBot.
 
 Supports three modes:
 1. Naive LLM generation over all docs (Phase 0)

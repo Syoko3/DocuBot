@@ -5,11 +5,6 @@ Core DocuBot class responsible for:
 - Retrieving relevant snippets (Phase 1 + Phase 3 chunking)
 - Supporting retrieval only answers
 - Supporting RAG answers when paired with Gemini (Phase 2)
-
-This is the reference *solution*: the three stubbed methods (`build_index`,
-`score_document`, `retrieve`) are implemented, and the Phase 3 refinements are
-included — retrieval works on paragraph-sized chunks (not whole files) and a
-guardrail refuses to answer when nothing relevant is found.
 """
 
 import os
