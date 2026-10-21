@@ -42,26 +42,28 @@ def _answer_for_mode(bot, mode, question):
         )
         return answer, [], _api_error(answer)
 
-    sources = bot.retrieve(question)
+    scored_sources = bot.retrieve_with_scores(question)
+    sources = [(filename, text) for filename, text, _ in scored_sources]
     if mode == "Retrieval only":
         answer = (
             f"Retrieved {len(sources)} relevant section(s)."
             if sources
             else UNKNOWN_ANSWER
         )
-        return answer, sources, False
+        return answer, scored_sources, False
 
     if not sources:
-        return UNKNOWN_ANSWER, sources, False
+        return UNKNOWN_ANSWER, scored_sources, False
 
-    answer = bot.answer_rag(question)
-    return answer, sources, _api_error(answer)
+    answer = bot.llm_client.answer_from_snippets(question, sources)
+    return answer, scored_sources, _api_error(answer)
 
 
 def _run_comparison(bot, question):
     """Run retrieval-only and RAG using the same question and sources."""
-    sources = bot.retrieve(question)
-    if not sources:
+    scored_sources = bot.retrieve_with_scores(question)
+    sources = [(filename, text) for filename, text, _ in scored_sources]
+    if not scored_sources:
         return {
             "sources": [],
             "retrieval_answer": UNKNOWN_ANSWER,
@@ -69,9 +71,9 @@ def _run_comparison(bot, question):
             "rag_error": False,
         }
 
-    rag_answer = bot.answer_rag(question)
+    rag_answer = bot.llm_client.answer_from_snippets(question, sources)
     return {
-        "sources": sources,
+        "sources": scored_sources,
         "retrieval_answer": f"Retrieved {len(sources)} relevant section(s).",
         "rag_answer": rag_answer,
         "rag_error": _api_error(rag_answer),
@@ -79,14 +81,22 @@ def _run_comparison(bot, question):
 
 
 def _display_sources(sources):
-    """Display retrieved section text with its filename."""
+    """Display retrieved section text, source filename, and raw retrieval score."""
     if not sources:
         st.info("No relevant sources were retrieved.")
         return
 
+    st.caption(
+        "Retrieval scores are raw counts of matching query terms, not "
+        "probabilities of correctness."
+    )
     with st.expander(f"Retrieved sources ({len(sources)})", expanded=True):
-        for index, (filename, text) in enumerate(sources, start=1):
-            st.markdown(f"**{index}. Source:** `{filename}`")
+        for index, (filename, text, score) in enumerate(sources, start=1):
+            st.markdown(
+                f"**{index}. Source:** `{filename}`  \n"
+                f"**Retrieval score (keyword overlap, not probability):** "
+                f"{score}"
+            )
             st.write(text)
 
 
@@ -203,14 +213,14 @@ def main():
                         "comparison": result,
                     }
                 else:
-                    answer, sources, error = _answer_for_mode(
+                    answer, scored_sources, error = _answer_for_mode(
                         bot, mode, question
                     )
                     message = {
                         "question": question,
                         "mode": mode,
                         "answer": answer,
-                        "sources": sources,
+                        "sources": scored_sources,
                         "error": error,
                         "comparison": None,
                     }

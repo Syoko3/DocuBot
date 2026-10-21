@@ -1,26 +1,15 @@
 # DocuBot
 
-DocuBot is a small documentation assistant that helps answer developer questions about a codebase. It can operate in three different modes:
-
-1. **Naive LLM mode**  
-   Sends the entire documentation corpus to a Gemini model and asks it to answer the question.
-
-2. **Retrieval only mode**  
-   Uses a simple indexing and scoring system to retrieve relevant snippets without calling an LLM.
-
-3. **RAG mode (Retrieval Augmented Generation)**  
-   Retrieves relevant snippets, then asks Gemini to answer using only those snippets.
-
-The docs folder contains realistic developer documents (API reference, authentication notes, database notes), but these files are **just text**. They support retrieval experiments and do not require students to set up any backend systems.
+DocuBot is a small documentation assistant that helps answer developer questions about a codebase. It searches the Markdown and text files in `docs/` and can return matching excerpts or use Gemini to produce an answer. The sample documents describe API, authentication, database, and setup topics; they are static example documentation, not a live application backend.
 
 ---
 
 ## App Structure
 
-'''
+```
 DocuBot/
 │
-├── docs/
+├── docs/                   # Markdown files for codebase
 │   ├── API_REFERENCE.md
 │   ├── AUTH.md
 │   ├── DATABASE.md
@@ -36,169 +25,92 @@ DocuBot/
 ├── main.py                 # Command-line interface
 ├── README.md
 └── requirements.txt
-'''
+```
 
 ---
 
 ## Setup
 
-### 1. Install Python dependencies
+Install the project dependencies:
 
-    pip install -r requirements.txt
-
-### 2. Configure environment variables
+```powershell
+pip install -r requirements.txt
+```
 
 Copy the example file:
 
-    cp .env.example .env
+```powershell
+cp .env.example .env
+```
 
 Then edit `.env` to include your Gemini API key:
 
-    GEMINI_API_KEY=your_api_key_here
+```text
+GEMINI_API_KEY=your_api_key_here
+```
 
-If you do not set a Gemini key, you can still run retrieval only mode.
+Start the web chat:
 
----
+```powershell
+streamlit run app.py
+```
 
-## Running DocuBot
+The command-line interface is also available:
 
-Start the command-line program:
+```powershell
+python main.py
+```
 
-    python main.py
-
-To use the web chat interface:
-
-    streamlit run app.py
-
-The web interface supports Naive LLM, Retrieval only, and RAG modes. It shows retrieved source sections, keeps a conversation history with a clear button, and can compare Retrieval only with RAG on the same question. Gemini modes and comparison require `GEMINI_API_KEY`. Example supported and unsupported questions are included in the app.
-
-Choose a mode:
-
-- **1**: Naive LLM (Gemini reads the full docs)  
-- **2**: Retrieval only (no LLM)  
-- **3**: RAG (retrieval + Gemini)
-
-You can use built in sample queries or type your own.
+Retrieval-only mode works without an API key. Naive LLM and RAG modes, and the retrieval-versus-RAG comparison, require `GEMINI_API_KEY`.
 
 ---
 
-## Running Retrieval Evaluation (optional)
+## Chat modes
 
-    python evaluation.py
+| Mode | Behavior |
+| --- | --- |
+| **Naive LLM** | Asks Gemini a question without retrieving project documentation. Use it as an ungrounded baseline. |
+| **Retrieval only** | Finds and displays matching documentation excerpts and their source filenames. No LLM is used. |
+| **RAG** | Retrieves documentation excerpts, then asks Gemini to answer using those excerpts. |
 
-This prints simple retrieval hit rates for sample queries.
-
----
-
-## Modifying the Project
-
-You will primarily work in:
-
-- `docubot.py`  
-  Implement or improve the retrieval index, scoring, and snippet selection.
-
-- `llm_client.py`  
-  Adjust the prompts and behavior of LLM responses.
-
-- `dataset.py`  
-  Add or change sample queries for testing.
+The web interface also keeps conversation history, can clear it, and includes an action to compare retrieval-only and RAG results for the same question. Example questions are provided in the app, including one the documents do not answer.
 
 ---
 
-## Requirements
+## Retrieval scores
 
-- Python 3.9+
-- A Gemini API key for LLM features (only needed for modes 1 and 3)
-- No database, no server setup, no external services besides LLM calls
+Each retrieved excerpt displays a **retrieval score**: the number of distinct meaningful query terms that appear in that excerpt. This raw keyword-overlap count ranks excerpts; it is **not** a probability that an excerpt or answer is correct. Stopwords are excluded, and matching is based on whole tokens, so synonyms and word variants may not match.
 
----
-
-## Model Card (I will delete some of it later)
-
-Short reflection on the DocuBot system
+Retrieval splits documents into blank-line-separated sections and returns up to three matching sections. If no meaningful query terms match, DocuBot returns “I don't know based on these docs.”
 
 ---
 
-### System Overview
+## Evaluation
 
-**What is DocuBot trying to do?**
-DocuBot answers developer questions about a project by searching its documentation (`docs/`) and, optionally, using an LLM to phrase an answer grounded in what it finds. It exists to show the difference between generating from training data and generating from retrieved evidence.
+Run the optional sample-query retrieval evaluation with:
 
-**What inputs does DocuBot take?** A user question, the Markdown/text files in `docs/`, and (for Mode 3) a `GEMINI_API_KEY` in `.env`.
+```powershell
+python evaluation.py
+```
 
-**What outputs does DocuBot produce?** Either raw retrieved snippets with their source filenames (Mode 2), an LLM answer grounded in those snippets (Mode 3), or an ungrounded LLM answer (Mode 1). When nothing relevant is found, it returns "I do not know based on these docs."
-
----
-
-### Retrieval Design
-
-**How does retrieval work?**
-- **Index:** `build_index` builds an inverted index (token → list of files).
-- **Chunking:** each document is split into paragraph-sized chunks (`_build_chunks`), so retrieval can return one focused section instead of a whole file.
-- **Scoring:** `score_document` drops stopwords (including corpus-meta words like "docs") from the query, then counts how many remaining query words appear as whole tokens in a chunk.
-- **Selection:** `retrieve` scores every chunk, sorts descending, and returns the top 3 — unless the best chunk scores below the confidence threshold, in which case it returns nothing (a refusal).
-
-**Tradeoffs:** Whole-token matching is precise but misses word variants ("connect" vs "connection", "database" vs "database_url"). Paragraph chunks improve focus but can split a heading away from the table it introduces. Simplicity was chosen over accuracy on purpose.
+It reports whether expected source files appear in the retrieved results. The evaluation is a small demonstration, not a comprehensive quality benchmark.
 
 ---
 
-### Use of the LLM (Gemini)
+## System notes
 
-- **Naive LLM mode:** answers from training data only, ignoring the docs — a pure
-  hallucination baseline.
-- **Retrieval only mode:** no LLM; returns the retrieved snippets verbatim.
-- **RAG mode:** retrieves snippets first, then asks Gemini to answer using only those snippets and to refuse when they're insufficient.
+### Intended use and inputs
 
-**Grounding instructions:** the RAG prompt in `llm_client.py` tells the model to use only the provided snippets and to say "I do not know" rather than guess.
+DocuBot demonstrates keyword retrieval and retrieval-augmented generation on the sample project documentation. Inputs are a question, the `.md` and `.txt` files in `docs/`, and optionally a Gemini API key for LLM-powered modes.
 
----
+### Retrieval design
 
-### Experiments and Comparisons
+The retriever splits files into paragraph-sized sections and counts distinct meaningful query terms found in each section. It ranks excerpts by that count and returns up to three. Its retrieval scores are not confidence or correctness probabilities. The approach is intentionally simple and does not understand meaning, synonyms, or word variants.
 
-Same queries, all three modes (Modes 1/3 require a Gemini key; observations below are from Mode 2 retrieval plus expected LLM behavior):
+### LLM behavior
 
-| Query | Naive LLM | Retrieval only | RAG | Notes |
-|------|-----------|----------------|-----|-------|
-| Where is the auth token generated? | Plausible but unverifiable | Returns the AUTH.md token section | Grounded + readable | Retrieval nails this one |
-| How do I connect to the database? | Generic advice | Returns SETUP.md, not DATABASE.md | Only as good as retrieval | Whole-token miss: "database_url" ≠ "database" |
-| Which endpoint lists all users? | May invent a path | Returns the correct API_REFERENCE.md route | Best of the three | Clear RAG win |
-| Is there any mention of payment processing? | Might hallucinate a feature | **Refuses** | **Refuses** | Guardrail working as intended |
+Naive LLM mode does not use retrieved project evidence and may return plausible but unsupported answers. RAG mode passes the retrieved excerpts to Gemini and instructs it to rely on them and to say when the evidence is insufficient. RAG can still produce an incorrect answer, particularly when retrieval returns irrelevant or incomplete context.
 
-**Patterns:** Mode 1 is fluent but ungrounded — dangerous when it invents specifics. Mode 2 is trustworthy but raw. Mode 3 is best when retrieval is right, and *inherits retrieval's mistakes* when it's wrong.
+### Limitations and responsible use
 
----
-
-### Failure Cases and Guardrails
-
-**Failure case 1 — "How do I connect to the database?"** Retrieval returns SETUP.md instead of DATABASE.md, because the DATABASE doc says "connection" and "DATABASE_URL" — neither is a whole-token match for "connect"/"database". A stemming or substring match would fix it.
-
-**Failure case 2 — "How does a client refresh an access token?"** Retrieval returns API_REFERENCE.md (which documents `POST /api/refresh`) rather than AUTH.md's refresh narrative. Both are arguably relevant; the ranking just favors the endpoint doc.
-
-**When DocuBot should refuse:** (1) when the question is about something not in the docs at all (payment processing); (2) when no chunk shares a meaningful keyword with the question.
-
-**Guardrail:** if the top-scoring chunk doesn't clear the confidence threshold, `retrieve` returns an empty list and every answer mode replies "I do not know based on these docs."
-
----
-
-### Limitations and Future Improvements
-
-**Limitations**
-1. Keyword matching has no understanding of synonyms or word variants.
-2. Paragraph chunking can separate a heading from the content it labels.
-3. The corpus is tiny and fictional; scores don't reflect real-world scale.
-
-**Future improvements**
-1. Add stemming/lemmatization or substring matching to catch word variants.
-2. Weight by term frequency (TF-IDF) instead of presence counts.
-3. Rank by document-level relevance before selecting chunks, to avoid one verbose file crowding the top results.
-
----
-
-### Responsible Use
-
-**Where could this cause harm?** A confident but wrong answer about auth or database config could send a developer down the wrong path; a naive-mode hallucination could invent an endpoint or env var that doesn't exist.
-
-**Guidelines for real developers:**
-- Treat Mode 1 (no retrieval) answers as unverified guesses.
-- Always check the cited source file before acting on an answer.
-- Prefer a clear "I do not know" over a plausible guess — the guardrail exists for a reason.
+The sample corpus is small and illustrative. Paragraph splitting can separate a heading from the content it describes, and keyword matching can miss relevant text that uses different terminology. Check the cited source excerpts before acting on an answer, especially for security, authentication, or configuration decisions. Prefer an explicit “I don't know” to an unsupported guess.

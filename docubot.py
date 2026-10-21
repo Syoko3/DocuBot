@@ -109,17 +109,14 @@ class DocuBot:
 
     def score_document(self, query, text):
         """
-        Return a relevance score for how well the text matches the query.
+        Return the count of distinct meaningful query terms found in the text.
 
-        Counts how many of the query's meaningful words (stopwords removed)
-        appear as whole tokens in the text. More overlap -> higher score.
-        Using whole-token matching (rather than substring) keeps the scoring
-        precise, so a doc that merely mentions "token" a lot doesn't drown out
-        the doc that actually answers a token question.
+        This is a raw keyword-overlap retrieval score, not a probability of
+        correctness or a normalized semantic similarity.
         """
-        query_words = [w for w in _tokenize(query) if w not in STOPWORDS]
+        query_words = {w for w in _tokenize(query) if w not in STOPWORDS}
         text_tokens = set(_tokenize(text))
-        return sum(1 for word in query_words if word in text_tokens)
+        return len(query_words & text_tokens)
 
     # Minimum score the best chunk must reach for DocuBot to answer at all.
     # With corpus-meta words ("docs") filtered out of the query, an off-topic
@@ -133,10 +130,25 @@ class DocuBot:
         top_k as (filename, chunk_text).
 
         Guardrail (Phase 3): if the best chunk scores below
-        MIN_CONFIDENT_SCORE (i.e. 0 or 1 query words matched), return an empty
-        list so the answer modes respond with "I do not know based on these
-        docs." rather than serving a weak, off-topic match.
+        MIN_CONFIDENT_SCORE (i.e. no meaningful query terms matched), return an
+        empty list so the answer modes respond with "I do not know based on
+        these docs." rather than serving a weak, off-topic match.
         """
+        return [
+            (filename, chunk_text)
+            for filename, chunk_text, _ in self.retrieve_with_scores(query, top_k)
+        ]
+
+    def retrieve_with_scores(self, query, top_k=3):
+        """
+        Return (filename, chunk_text, retrieval_score) tuples in ranked order.
+
+        Scores count distinct meaningful query terms found in each chunk. They
+        are raw keyword-overlap counts, not probabilities of correctness.
+        """
+        if top_k <= 0:
+            return []
+
         scored = []
         for filename, chunk_text in self.chunks:
             score = self.score_document(query, chunk_text)
@@ -148,7 +160,10 @@ class DocuBot:
         if not scored or scored[0][0] < self.MIN_CONFIDENT_SCORE:
             return []
 
-        return [(filename, chunk_text) for _, filename, chunk_text in scored[:top_k]]
+        return [
+            (filename, chunk_text, score)
+            for score, filename, chunk_text in scored[:top_k]
+        ]
 
     # -----------------------------------------------------------
     # Answering Modes
