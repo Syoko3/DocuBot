@@ -15,7 +15,7 @@ DocuBot/
 │   ├── DATABASE.md
 │   └── SETUP.md
 │
-├── .env.example            # Make a copy of this
+├── .env.example
 ├── .gitignore
 ├── app.py                  # Streamlit chatbot interface
 ├── dataset.py              # Sample Queries
@@ -31,6 +31,12 @@ DocuBot/
 
 ## Setup
 
+Clone the project:
+
+```powershell
+git clone https://github.com/Syoko3/DocuBot
+```
+
 Install the project dependencies:
 
 ```powershell
@@ -43,7 +49,7 @@ Copy the example file:
 cp .env.example .env
 ```
 
-Then edit `.env` to include your Gemini API key:
+Then edit `.env` to include your Gemini API key (If you don't have one, create the key from the [Google AI Studio](https://aistudio.google.com/app/apikey)):
 
 ```text
 GEMINI_API_KEY=your_api_key_here
