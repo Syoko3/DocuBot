@@ -42,9 +42,14 @@ def _answer_for_mode(bot, mode, question):
         )
         return answer, [], _api_error(answer)
 
-    scored_sources = bot.retrieve_with_scores(question)
+    semantic = mode in ("Semantic retrieval", "Semantic RAG")
+    retrieve = (
+        bot.semantic_retrieve_with_scores if semantic
+        else bot.retrieve_with_scores
+    )
+    scored_sources = retrieve(question)
     sources = [(filename, text) for filename, text, _ in scored_sources]
-    if mode == "Retrieval only":
+    if mode in ("Retrieval only", "Semantic retrieval"):
         answer = (
             f"Retrieved {len(sources)} relevant section(s)."
             if sources
@@ -80,22 +85,29 @@ def _run_comparison(bot, question):
     }
 
 
-def _display_sources(sources):
-    """Display retrieved section text, source filename, and raw retrieval score."""
+def _display_sources(sources, semantic=False):
+    """Display retrieved text, source filename, and the retrieval score."""
     if not sources:
         st.info("No relevant sources were retrieved.")
         return
 
-    st.caption(
-        "Retrieval scores are raw counts of matching query terms, not "
-        "probabilities of correctness."
-    )
+    if semantic:
+        st.caption("Cosine similarity scores range from -1 to 1; higher is more similar.")
+    else:
+        st.caption(
+            "Retrieval scores are raw counts of matching query terms, not "
+            "probabilities of correctness."
+        )
     with st.expander(f"Retrieved sources ({len(sources)})", expanded=True):
         for index, (filename, text, score) in enumerate(sources, start=1):
+            score_label = (
+                "Cosine similarity" if semantic
+                else "Keyword overlap (not probability)"
+            )
+            score_value = f"{score:.4f}" if semantic else str(score)
             st.markdown(
                 f"**{index}. Source:** `{filename}`  \n"
-                f"**Retrieval score (keyword overlap, not probability):** "
-                f"{score}"
+                f"**{score_label}:** {score_value}"
             )
             st.write(text)
 
@@ -127,7 +139,13 @@ def _display_messages():
                         st.write(comparison["rag_answer"])
             else:
                 if message["mode"] != "Naive LLM":
-                    _display_sources(message["sources"])
+                    _display_sources(
+                        message["sources"],
+                        semantic=message["mode"] in (
+                            "Semantic retrieval",
+                            "Semantic RAG",
+                        ),
+                    )
                 if message["error"]:
                     st.error(message["answer"])
                 else:
@@ -137,21 +155,40 @@ def _display_messages():
 def main():
     st.set_page_config(page_title="DocuBot", page_icon="📚")
     st.title("DocuBot")
-    st.caption("Ask questions about the project documentation.")
+    st.caption('''
+        DocuBot is a small documentation assistant that helps answer developer questions about a codebase.
+        It searches the Markdown and text files in `docs/` and can return matching excerpts or use Gemini to produce an answer.
+        Ask questions about the project documentation. Open the sidebar to view the loaded documents and clear the conversation if needed.
+        If you don't have a GEMINI_API_KEY, only retrieval-only and semantic retrieval modes are available.
+    ''')
     if "messages" not in st.session_state:
         st.session_state["messages"] = []
 
     bot, llm_error = create_bot()
+    with st.sidebar:
+        if st.button("Clear Conversation"):
+            st.session_state["messages"] = []
+            st.session_state["question_input"] = ""
+            st.rerun()
+
+        with st.expander("Uploaded Documents"):
+            if bot.documents:
+                documents_by_name = dict(bot.documents)
+                selected_filename = st.selectbox(
+                    "Choose a document",
+                    sorted(documents_by_name),
+                    key="document_viewer_selection",
+                )
+                st.markdown(documents_by_name[selected_filename])
+            else:
+                st.info("No documents were loaded.")
+
     if llm_error:
         st.info(
             "Gemini modes need a GEMINI_API_KEY. Retrieval-only mode is "
-            "available without one; selecting an LLM mode will show an error."
+            "available without one; semantic retrieval is also available "
+            "without one. Selecting an LLM mode will show an error."
         )
-
-    if st.button("Clear conversation"):
-        st.session_state["messages"] = []
-        st.session_state["question_input"] = ""
-        st.rerun()
 
     with st.expander("Example questions"):
         st.caption("Supported example")
@@ -164,8 +201,18 @@ def main():
     with st.form("chat_form"):
         mode = st.selectbox(
             "Mode",
-            ["Naive LLM", "Retrieval only", "RAG"],
+            [
+                "Naive LLM",
+                "Retrieval only",
+                "Semantic retrieval",
+                "RAG",
+                "Semantic RAG",
+            ],
             index=1,
+            help=(
+                "Semantic modes use ChromaDB's local default embedding model. "
+                "The model may download on the first semantic query."
+            ),
         )
         question = st.text_input(
             "Question",
@@ -190,7 +237,11 @@ def main():
                 "Comparison requires Gemini. Set GEMINI_API_KEY and restart "
                 "the app to enable it."
             )
-        elif not compare and mode != "Retrieval only" and bot.llm_client is None:
+        elif (
+            not compare
+            and mode not in ("Retrieval only", "Semantic retrieval")
+            and bot.llm_client is None
+        ):
             st.session_state["messages"].append(
                 {
                     "question": question,

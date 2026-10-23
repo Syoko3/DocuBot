@@ -61,7 +61,7 @@ The command-line interface is also available:
 python main.py
 ```
 
-Retrieval-only mode works without an API key. Naive LLM and RAG modes, and the retrieval-versus-RAG comparison, require `GEMINI_API_KEY`.
+Retrieval-only and semantic retrieval modes work without an API key. Naive LLM and both RAG modes, and the retrieval-versus-RAG comparison, require `GEMINI_API_KEY`.
 
 ---
 
@@ -70,18 +70,20 @@ Retrieval-only mode works without an API key. Naive LLM and RAG modes, and the r
 | Mode | Behavior |
 | --- | --- |
 | **Naive LLM** | Asks Gemini a question without retrieving project documentation. Use it as an ungrounded baseline. |
-| **Retrieval only** | Finds and displays matching documentation excerpts and their source filenames. No LLM is used. |
-| **RAG** | Retrieves documentation excerpts, then asks Gemini to answer using those excerpts. |
+| **Retrieval only** | Finds and displays matching documentation excerpts using keyword overlap. No LLM is used. |
+| **Semantic retrieval** | Uses ChromaDB's default local embedding function and cosine similarity to find semantically related excerpts. No LLM is used. |
+| **RAG** | Retrieves documentation excerpts using keyword overlap, then asks Gemini to answer using those excerpts. |
+| **Semantic RAG** | Retrieves excerpts using ChromaDB embeddings and cosine similarity, then asks Gemini to answer using those excerpts. |
 
-The web interface also keeps conversation history, can clear it, and includes an action to compare retrieval-only and RAG results for the same question. Example questions are provided in the app, including one the documents do not answer.
+The web interface also keeps conversation history. Its sidebar provides a **Clear conversation** action and a **Look at documents** browser for the loaded documentation. The app includes an action to compare retrieval-only and RAG results for the same question, as well as example questions including one the documents do not answer.
 
 ---
 
 ## Retrieval scores
 
-Each retrieved excerpt displays a **retrieval score**: the number of distinct meaningful query terms that appear in that excerpt. This raw keyword-overlap count ranks excerpts; it is **not** a probability that an excerpt or answer is correct. Stopwords are excluded, and matching is based on whole tokens, so synonyms and word variants may not match.
+Keyword retrieval displays a **retrieval score** equal to the number of distinct meaningful query terms appearing in an excerpt. This raw keyword-overlap count is **not** a probability of correctness. Semantic retrieval displays cosine similarity, calculated as `1 - cosine distance` from an in-memory ChromaDB cosine-space collection; higher values indicate greater vector similarity, not answer correctness. ChromaDB's default local embedding model is downloaded on first semantic use.
 
-Retrieval splits documents into blank-line-separated sections and returns up to three matching sections. If no meaningful query terms match, DocuBot returns “I don't know based on these docs.”
+Both retrieval modes split documents into blank-line-separated sections and return up to three results. Keyword retrieval requires at least one meaningful query term to match; semantic retrieval ranks sections by embedding-vector cosine similarity.
 
 ---
 
@@ -101,11 +103,11 @@ It reports whether expected source files appear in the retrieved results. The ev
 
 ### Intended use and inputs
 
-DocuBot demonstrates keyword retrieval and retrieval-augmented generation on the sample project documentation. Inputs are a question, the `.md` and `.txt` files in `docs/`, and optionally a Gemini API key for LLM-powered modes.
+DocuBot demonstrates keyword and semantic retrieval, plus retrieval-augmented generation, on the sample project documentation. Inputs are a question, the `.md` and `.txt` files in `docs/`, and optionally a Gemini API key for LLM-powered modes.
 
 ### Retrieval design
 
-The retriever splits files into paragraph-sized sections and counts distinct meaningful query terms found in each section. It ranks excerpts by that count and returns up to three. Its retrieval scores are not confidence or correctness probabilities. The approach is intentionally simple and does not understand meaning, synonyms, or word variants.
+Both retrievers split files into paragraph-sized sections. Keyword retrieval counts distinct meaningful query terms in each section. Semantic retrieval uses ChromaDB's default local embedding function with cosine distance, converting distance to similarity with `1 - distance`. Each returns up to three sections. Neither score is a confidence or correctness probability.
 
 ### LLM behavior
 
@@ -113,4 +115,4 @@ Naive LLM mode does not use retrieved project evidence and may return plausible 
 
 ### Limitations and responsible use
 
-The sample corpus is small and illustrative. Paragraph splitting can separate a heading from the content it describes, and keyword matching can miss relevant text that uses different terminology. Check the cited source excerpts before acting on an answer, especially for security, authentication, or configuration decisions. Prefer an explicit “I don't know” to an unsupported guess.
+The sample corpus is small and illustrative. Paragraph splitting can separate a heading from the content it describes. Keyword matching can miss relevant text that uses different terminology, while semantic similarity can rank related but insufficient passages. Check the cited source excerpts before acting on an answer, especially for security, authentication, or configuration decisions. Prefer an explicit “I don't know” to an unsupported guess.

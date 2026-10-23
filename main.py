@@ -33,7 +33,7 @@ def try_create_llm_client():
 def choose_mode(has_llm):
     """
     Asks the user which mode to run.
-    Returns "1", "2", "3", or "q".
+    Returns "1" through "5", or "q".
     """
     print("Choose a mode:")
     if has_llm:
@@ -41,11 +41,14 @@ def choose_mode(has_llm):
     else:
         print("  1) Naive LLM over full docs (unavailable, no GEMINI_API_KEY)")
     print("  2) Retrieval only (no LLM)")
+    print("  3) Semantic retrieval only (ChromaDB embeddings)")
     if has_llm:
-        print("  3) RAG (retrieval + LLM)")
+        print("  4) RAG (retrieval + LLM)")
+        print("  5) Semantic RAG (ChromaDB retrieval + LLM)")
     else:
-        print("  3) RAG (unavailable, no GEMINI_API_KEY)")
-    print("  q) Quit")
+        print("  4) RAG (unavailable, no GEMINI_API_KEY)")
+        print("  5) Semantic RAG (unavailable, no GEMINI_API_KEY)")
+    print("  99) Quit")
 
     choice = input("Enter choice: ").strip().lower()
     return choice
@@ -129,9 +132,40 @@ def run_rag_mode(bot, has_llm):
         print()
 
 
+def run_semantic_retrieval_mode(bot):
+    """Mode 4: retrieve relevant snippets using local embedding vectors."""
+    queries, label = get_query_or_use_samples()
+    print(f"\nRunning semantic retrieval mode on {label}...\n")
+
+    for query in queries:
+        print("=" * 60)
+        print(f"Question: {query}\n")
+        for filename, text, score in bot.semantic_retrieve_with_scores(query):
+            print(f"[{filename}] cosine similarity: {score:.4f}")
+            print(text)
+            print()
+
+
+def run_semantic_rag_mode(bot, has_llm):
+    """Mode 5: semantic retrieval followed by Gemini answer generation."""
+    if not has_llm or bot.llm_client is None:
+        print("\nSemantic RAG is not available (no GEMINI_API_KEY).\n")
+        return
+
+    queries, label = get_query_or_use_samples()
+    print(f"\nRunning semantic RAG mode on {label}...\n")
+
+    for query in queries:
+        print("=" * 60)
+        print(f"Question: {query}\n")
+        print("Answer:")
+        print(bot.answer_semantic_rag(query))
+        print()
+
+
 def main():
-    print("DocuBot Tinker Activity")
-    print("=======================\n")
+    print("DocuBot")
+    print("=======\n")
 
     llm_client, has_llm = try_create_llm_client()
     bot = DocuBot(llm_client=llm_client)
@@ -139,7 +173,7 @@ def main():
     while True:
         choice = choose_mode(has_llm)
 
-        if choice == "q":
+        if choice == "99":
             print("\nGoodbye.")
             break
         elif choice == "1":
@@ -148,8 +182,12 @@ def main():
             run_retrieval_only_mode(bot)
         elif choice == "3":
             run_rag_mode(bot, has_llm)
+        elif choice == "4":
+            run_semantic_retrieval_mode(bot)
+        elif choice == "5":
+            run_semantic_rag_mode(bot, has_llm)
         else:
-            print("\nUnknown choice. Please pick 1, 2, 3, or q.\n")
+            print("\nUnknown choice. Please pick 1, 2, 3, 4, 5, or 99.\n")
 
 
 if __name__ == "__main__":

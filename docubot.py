@@ -3,6 +3,7 @@ Core DocuBot class responsible for:
 - Loading documents from the docs/ folder
 - Building a simple retrieval index (Phase 1)
 - Retrieving relevant snippets (Phase 1 + Phase 3 chunking)
+- Retrieving semantically similar snippets with ChromaDB
 - Supporting retrieval only answers
 - Supporting RAG answers when paired with Gemini (Phase 2)
 """
@@ -10,6 +11,7 @@ Core DocuBot class responsible for:
 import os
 import glob
 import re
+import uuid
 
 # Very common words that carry little retrieval signal. Dropping them from the
 # query keeps a question like "Where is the auth token generated?" focused on
@@ -48,6 +50,8 @@ class DocuBot:
         # Phase 3: pre-split documents into smaller, focused chunks so retrieval
         # can return a single relevant section instead of an entire file.
         self.chunks = self._build_chunks(self.documents)
+        self._semantic_client = None
+        self._semantic_collection = None
 
     # -----------------------------------------------------------
     # Document Loading
@@ -165,6 +169,62 @@ class DocuBot:
             for score, filename, chunk_text in scored[:top_k]
         ]
 
+    def _get_semantic_collection(self):
+        """Create the in-memory Chroma collection with its default local embedder."""
+        if self._semantic_collection is None and self.chunks:
+            import chromadb
+
+            self._semantic_client = chromadb.Client()
+            self._semantic_collection = self._semantic_client.create_collection(
+                name=f"docubot_{uuid.uuid4().hex}",
+                metadata={"hnsw:space": "cosine"},
+            )
+            self._semantic_collection.add(
+                ids=[str(index) for index in range(len(self.chunks))],
+                documents=[text for _, text in self.chunks],
+                metadatas=[
+                    {"filename": filename} for filename, _ in self.chunks
+                ],
+            )
+        return self._semantic_collection
+
+    def semantic_retrieve(self, query, top_k=3):
+        """Return the top semantic matches as (filename, chunk_text) tuples."""
+        return [
+            (filename, chunk_text)
+            for filename, chunk_text, _ in self.semantic_retrieve_with_scores(
+                query, top_k
+            )
+        ]
+
+    def semantic_retrieve_with_scores(self, query, top_k=3):
+        """
+        Return semantic matches with cosine similarity scores in descending order.
+
+        Chroma reports cosine distance (1 - cosine similarity), so convert each
+        returned distance to a similarity score before exposing it.
+        """
+        if top_k <= 0 or not self.chunks:
+            return []
+
+        collection = self._get_semantic_collection()
+        results = collection.query(
+            query_texts=[query],
+            n_results=min(top_k, len(self.chunks)),
+            include=["documents", "metadatas", "distances"],
+        )
+
+        documents = results["documents"][0]
+        metadatas = results["metadatas"][0]
+        distances = results["distances"][0]
+        scored = [
+            (metadata["filename"], text, 1.0 - distance)
+            for text, metadata, distance in zip(
+                documents, metadatas, distances
+            )
+        ]
+        return sorted(scored, key=lambda item: item[2], reverse=True)
+
     # -----------------------------------------------------------
     # Answering Modes
     # -----------------------------------------------------------
@@ -198,6 +258,19 @@ class DocuBot:
 
         snippets = self.retrieve(query, top_k=top_k)
 
+        if not snippets:
+            return "I do not know based on these docs."
+
+        return self.llm_client.answer_from_snippets(query, snippets)
+
+    def answer_semantic_rag(self, query, top_k=3):
+        """Retrieve semantically similar snippets, then generate a grounded answer."""
+        if self.llm_client is None:
+            raise RuntimeError(
+                "Semantic RAG requires an LLM client. Provide a GeminiClient instance."
+            )
+
+        snippets = self.semantic_retrieve(query, top_k=top_k)
         if not snippets:
             return "I do not know based on these docs."
 
