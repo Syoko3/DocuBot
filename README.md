@@ -49,7 +49,7 @@ Then edit `.env` to include your Gemini API key:
 GEMINI_API_KEY=your_api_key_here
 ```
 
-Start the web chat:
+Start the Streamlit chatbot interface:
 
 ```powershell
 streamlit run app.py
@@ -75,7 +75,7 @@ Retrieval-only and semantic retrieval modes work without an API key. Naive LLM a
 | **RAG** | Retrieves documentation excerpts using keyword overlap, then asks Gemini to answer using those excerpts. |
 | **Semantic RAG** | Retrieves excerpts using ChromaDB embeddings and cosine similarity, then asks Gemini to answer using those excerpts. |
 
-The web interface also keeps conversation history. Its sidebar provides a **Clear conversation** action and a **Look at documents** browser for the loaded documentation. The app includes an action to compare retrieval-only and RAG results for the same question, as well as example questions including one the documents do not answer.
+The web interface also keeps conversation history and shows each message's timestamp in Pacific Time. Users choose a mode from the **Choose a mode** option before submitting a question. The sidebar provides a **Clear conversation** action and a **Look at documents** browser for the loaded documentation. The app includes an action to compare retrieval-only and RAG results for the same question, as well as example questions including one the documents do not answer.
 
 ---
 

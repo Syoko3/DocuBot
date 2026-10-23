@@ -1,5 +1,8 @@
 """Streamlit chat interface for DocuBot."""
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from dotenv import load_dotenv
 import streamlit as st
 
@@ -10,6 +13,7 @@ from llm_client import GeminiClient
 
 load_dotenv()
 
+# Constants for the chatbot interface
 UNKNOWN_ANSWER = "I don't know based on these docs."
 SUPPORTED_EXAMPLE = SAMPLE_QUERIES[2]
 UNANSWERABLE_EXAMPLE = "Is there any mention of payment processing in these docs?"
@@ -18,6 +22,8 @@ API_ERROR_PREFIXES = (
     "API error — could not generate answer. (",
 )
 BOT_CACHE_VERSION = 2
+PACIFIC_TIME = ZoneInfo("America/Los_Angeles")
+MODE_PLACEHOLDER = "Choose a mode"
 
 
 @st.cache_resource
@@ -33,6 +39,13 @@ def create_bot(cache_version=BOT_CACHE_VERSION):
 def _api_error(answer):
     """Return whether the Gemini client encoded an API failure in its result."""
     return answer.startswith(API_ERROR_PREFIXES)
+
+
+def _clear_conversation():
+    """Clear the chat and its input before Streamlit renders the next run."""
+    st.session_state["messages"] = []
+    st.session_state["question_input"] = ""
+    st.session_state["mode_selection"] = MODE_PLACEHOLDER
 
 
 def _answer_for_mode(bot, mode, question):
@@ -118,6 +131,8 @@ def _display_messages():
     for message in st.session_state["messages"]:
         with st.chat_message("user"):
             st.write(message["question"])
+            if "timestamp" in message:
+                st.caption(message["timestamp"])
 
         with st.chat_message("assistant"):
             st.caption(
@@ -159,30 +174,34 @@ def main():
     st.caption('''
         DocuBot is a small documentation assistant that helps answer developer questions about a codebase.
         It searches the Markdown and text files in `docs/` and can return matching excerpts or use Gemini to produce an answer.
-        Ask questions about the project documentation. Open the sidebar to view the loaded documents and clear the conversation if needed.
-        If you don't have a GEMINI_API_KEY, only retrieval-only and semantic retrieval modes are available.
+        Ask questions about the project documentation. You can click the "Clear Conversation" button to clear the conversation.
+        You can also click the "Compare retrieval-only vs RAG" button to see how the two modes differ.
+        Open the sidebar to view the loaded documents. If you don't have a GEMINI_API_KEY, only retrieval-only and semantic retrieval modes are available.
     ''')
     if "messages" not in st.session_state:
         st.session_state["messages"] = []
 
     bot, llm_error = create_bot(BOT_CACHE_VERSION)
     with st.sidebar:
-        if st.button("Clear Conversation"):
-            st.session_state["messages"] = []
-            st.session_state["question_input"] = ""
-            st.rerun()
-
-        with st.expander("Uploaded Documents"):
-            if bot.documents:
-                documents_by_name = dict(bot.documents)
-                selected_filename = st.selectbox(
-                    "Choose a document",
-                    sorted(documents_by_name),
-                    key="document_viewer_selection",
-                )
-                st.markdown(documents_by_name[selected_filename])
+        st.header("Uploaded Documents")
+        if bot.documents:
+            documents_by_name = dict(bot.documents)
+            document_options = [
+                "Choose a document",
+                *sorted(documents_by_name),
+            ]
+            selected_filename = st.selectbox(
+                "Select a document to view its contents",
+                document_options,
+                key="document_viewer_selection",
+            )
+            if selected_filename == document_options[0]:
+                st.caption("No documents selected.")
             else:
-                st.info("No documents were loaded.")
+                with st.expander(f"{selected_filename}", expanded=True):
+                    st.markdown(documents_by_name[selected_filename])
+        else:
+            st.info("No documents were loaded.")
 
     if llm_error:
         st.info(
@@ -203,13 +222,15 @@ def main():
         mode = st.selectbox(
             "Mode",
             [
+                MODE_PLACEHOLDER,
                 "Naive LLM",
                 "Retrieval only",
                 "Semantic retrieval",
                 "RAG",
                 "Semantic RAG",
             ],
-            index=1,
+            index=0,
+            key="mode_selection",
             help=(
                 "Semantic modes use ChromaDB's local default embedding model. "
                 "The model may download on the first semantic query."
@@ -220,7 +241,7 @@ def main():
             key="question_input",
             placeholder="Ask a documentation question...",
         )
-        ask_clicked, compare_clicked = st.columns(2)
+        ask_clicked, compare_clicked, reset = st.columns(3)
         with ask_clicked:
             submitted = st.form_submit_button("Ask")
         with compare_clicked:
@@ -228,11 +249,18 @@ def main():
                 "Compare retrieval-only vs RAG",
                 disabled=bot.llm_client is None,
             )
+        with reset:
+            st.form_submit_button(
+                "Clear conversation",
+                on_click=_clear_conversation,
+            )
 
     if submitted or compare:
         question = question.strip()
         if not question:
             st.error("Enter a question before submitting.")
+        elif not compare and mode == MODE_PLACEHOLDER:
+            st.error("Choose a mode before asking a question.")
         elif compare and bot.llm_client is None:
             st.error(
                 "Comparison requires Gemini. Set GEMINI_API_KEY and restart "
@@ -240,12 +268,16 @@ def main():
             )
         elif (
             not compare
-            and mode not in ("Retrieval only", "Semantic retrieval")
+            and mode not in (MODE_PLACEHOLDER, "Retrieval only", "Semantic retrieval")
             and bot.llm_client is None
         ):
+            timestamp = datetime.now(PACIFIC_TIME).strftime(
+                "%Y-%m-%d %I:%M:%S %p %Z"
+            )
             st.session_state["messages"].append(
                 {
                     "question": question,
+                    "timestamp": timestamp,
                     "mode": mode,
                     "answer": (
                         "This mode requires GEMINI_API_KEY. Configure it and "
@@ -257,11 +289,15 @@ def main():
                 }
             )
         else:
+            timestamp = datetime.now(PACIFIC_TIME).strftime(
+                "%Y-%m-%d %I:%M:%S %p %Z"
+            )
             with st.spinner("Retrieving sources and generating an answer..."):
                 if compare:
                     result = _run_comparison(bot, question)
                     message = {
                         "question": question,
+                        "timestamp": timestamp,
                         "comparison": result,
                     }
                 else:
@@ -270,6 +306,7 @@ def main():
                     )
                     message = {
                         "question": question,
+                        "timestamp": timestamp,
                         "mode": mode,
                         "answer": answer,
                         "sources": scored_sources,

@@ -18,6 +18,10 @@ SAMPLE_QUERIES = [
     "Is there any mention of payment processing in these docs?",
     "How does a client refresh an access token?",
     "Which fields are stored in the users table?",
+    "How can I get a replacement token after my current one expires?",
+    "Which permission levels can a project member have?",
+    "Can non-admin users view the complete user list?",
+    "What database engine is used for local development?",
 ]
 
 # -----------------------------------------------------------

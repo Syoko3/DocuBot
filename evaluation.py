@@ -32,6 +32,8 @@ EXPECTED_SOURCES = {
     "projects": ["API_REFERENCE.md"],
     "refresh": ["AUTH.md"],
     "users table": ["DATABASE.md"],
+    "replacement token": ["AUTH.md"],
+    "permission levels": ["DATABASE.md"],
 }
 
 
