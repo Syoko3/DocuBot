@@ -17,11 +17,12 @@ API_ERROR_PREFIXES = (
     "Unable to generate an answer. (",
     "API error — could not generate answer. (",
 )
+BOT_CACHE_VERSION = 2
 
 
 @st.cache_resource
-def create_bot():
-    """Create a shared DocuBot, enabling LLM modes when an API key is set."""
+def create_bot(cache_version=BOT_CACHE_VERSION):
+    """Cache a DocuBot; cache_version invalidates resources after bot changes."""
     try:
         llm_client = GeminiClient()
     except RuntimeError as exc:
@@ -95,16 +96,16 @@ def _display_sources(sources, semantic=False):
         st.caption("Cosine similarity scores range from -1 to 1; higher is more similar.")
     else:
         st.caption(
-            "Retrieval scores are raw counts of matching query terms, not "
-            "probabilities of correctness."
+            "Keyword scores are the fraction of distinct meaningful query "
+            "terms found in a section (0.0-1.0), not probabilities of correctness."
         )
     with st.expander(f"Retrieved sources ({len(sources)})", expanded=True):
         for index, (filename, text, score) in enumerate(sources, start=1):
             score_label = (
                 "Cosine similarity" if semantic
-                else "Keyword overlap (not probability)"
+                else "Normalized keyword overlap"
             )
-            score_value = f"{score:.4f}" if semantic else str(score)
+            score_value = f"{score:.4f}"
             st.markdown(
                 f"**{index}. Source:** `{filename}`  \n"
                 f"**{score_label}:** {score_value}"
@@ -164,7 +165,7 @@ def main():
     if "messages" not in st.session_state:
         st.session_state["messages"] = []
 
-    bot, llm_error = create_bot()
+    bot, llm_error = create_bot(BOT_CACHE_VERSION)
     with st.sidebar:
         if st.button("Clear Conversation"):
             st.session_state["messages"] = []

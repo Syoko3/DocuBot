@@ -81,7 +81,7 @@ The web interface also keeps conversation history. Its sidebar provides a **Clea
 
 ## Retrieval scores
 
-Keyword retrieval displays a **retrieval score** equal to the number of distinct meaningful query terms appearing in an excerpt. This raw keyword-overlap count is **not** a probability of correctness. Semantic retrieval displays cosine similarity, calculated as `1 - cosine distance` from an in-memory ChromaDB cosine-space collection; higher values indicate greater vector similarity, not answer correctness. ChromaDB's default local embedding model is downloaded on first semantic use.
+Keyword retrieval displays a normalized **retrieval score**: the number of distinct meaningful query terms appearing in an excerpt divided by the number of distinct meaningful query terms in the question. It ranges from `0.0` to `1.0` and is **not** a probability of correctness. Semantic retrieval displays cosine similarity, calculated as `1 - cosine distance` from an in-memory ChromaDB cosine-space collection; higher values indicate greater vector similarity, not answer correctness. ChromaDB's default local embedding model is downloaded on first semantic use.
 
 Both retrieval modes split documents into blank-line-separated sections and return up to three results. Keyword retrieval requires at least one meaningful query term to match; semantic retrieval ranks sections by embedding-vector cosine similarity.
 
@@ -107,7 +107,7 @@ DocuBot demonstrates keyword and semantic retrieval, plus retrieval-augmented ge
 
 ### Retrieval design
 
-Both retrievers split files into paragraph-sized sections. Keyword retrieval counts distinct meaningful query terms in each section. Semantic retrieval uses ChromaDB's default local embedding function with cosine distance, converting distance to similarity with `1 - distance`. Each returns up to three sections. Neither score is a confidence or correctness probability.
+Both retrievers split files into paragraph-sized sections. Keyword retrieval divides the count of distinct meaningful query terms found in a section by the total number of distinct meaningful query terms in the query. Semantic retrieval uses ChromaDB's default local embedding function with cosine distance, converting distance to similarity with `1 - distance`. Each returns up to three sections. Neither score is a confidence or correctness probability.
 
 ### LLM behavior
 

@@ -113,30 +113,24 @@ class DocuBot:
 
     def score_document(self, query, text):
         """
-        Return the count of distinct meaningful query terms found in the text.
+        Return the fraction of distinct meaningful query terms found in the text.
 
-        This is a raw keyword-overlap retrieval score, not a probability of
-        correctness or a normalized semantic similarity.
+        The normalized keyword-overlap score is between 0.0 and 1.0. It is not
+        a probability of correctness or a semantic similarity.
         """
         query_words = {w for w in _tokenize(query) if w not in STOPWORDS}
         text_tokens = set(_tokenize(text))
-        return len(query_words & text_tokens)
-
-    # Minimum score the best chunk must reach for DocuBot to answer at all.
-    # With corpus-meta words ("docs") filtered out of the query, an off-topic
-    # question like "payment processing in these docs" matches nothing and is
-    # refused; any genuine keyword hit clears this bar.
-    MIN_CONFIDENT_SCORE = 1
+        if not query_words:
+            return 0.0
+        return len(query_words & text_tokens) / len(query_words)
 
     def retrieve(self, query, top_k=3):
         """
         Score every chunk, sort by relevance (descending), and return the
         top_k as (filename, chunk_text).
 
-        Guardrail (Phase 3): if the best chunk scores below
-        MIN_CONFIDENT_SCORE (i.e. no meaningful query terms matched), return an
-        empty list so the answer modes respond with "I do not know based on
-        these docs." rather than serving a weak, off-topic match.
+        If no meaningful query terms match, return an empty list so answer
+        modes respond with "I do not know based on these docs."
         """
         return [
             (filename, chunk_text)
@@ -147,8 +141,9 @@ class DocuBot:
         """
         Return (filename, chunk_text, retrieval_score) tuples in ranked order.
 
-        Scores count distinct meaningful query terms found in each chunk. They
-        are raw keyword-overlap counts, not probabilities of correctness.
+        Scores are the fraction of distinct meaningful query terms found in
+        each chunk. They range from 0.0 to 1.0 and are not probabilities of
+        correctness.
         """
         if top_k <= 0:
             return []
@@ -161,7 +156,7 @@ class DocuBot:
 
         scored.sort(key=lambda item: item[0], reverse=True)
 
-        if not scored or scored[0][0] < self.MIN_CONFIDENT_SCORE:
+        if not scored:
             return []
 
         return [
