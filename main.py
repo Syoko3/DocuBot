@@ -13,7 +13,7 @@ You can run this script with `python main.py` or `python -m docubot.main`.
 from dotenv import load_dotenv
 load_dotenv()
 
-from docubot import DocuBot
+from docubot import CHUNKING_STRATEGIES, DocuBot
 from llm_client import GeminiClient
 from dataset import SAMPLE_QUERIES
 
@@ -55,6 +55,20 @@ def choose_mode(has_llm):
 
     choice = input("Enter choice: ").strip().lower()
     return choice
+
+
+def choose_chunking_strategy():
+    """Ask which strategy DocuBot should use to build its retrieval chunks."""
+    print("\nChoose a chunking strategy:")
+    for index, strategy in enumerate(CHUNKING_STRATEGIES, start=1):
+        print(f"  {index}) {strategy.replace('_', ' ').title()}")
+    choice = input("Enter choice (default 1): ").strip()
+    if not choice:
+        return CHUNKING_STRATEGIES[0]
+    if choice.isdigit() and 1 <= int(choice) <= len(CHUNKING_STRATEGIES):
+        return CHUNKING_STRATEGIES[int(choice) - 1]
+    print("Unknown choice; using structure chunking.\n")
+    return CHUNKING_STRATEGIES[0]
 
 
 def get_query_or_use_samples():
@@ -161,7 +175,6 @@ def main():
     print("==========================================\n")
 
     llm_client, has_llm = try_create_llm_client()
-    bot = DocuBot(llm_client=llm_client)
 
     while True:
         choice = choose_mode(has_llm)
@@ -169,16 +182,22 @@ def main():
         if choice == "0":
             print("\nGoodbye.")
             break
-        elif choice == "1":
-            run_naive_llm_mode(bot, has_llm)
-        elif choice == "2":
-            run_retrieval_only_mode(bot)
-        elif choice == "3":
-            run_semantic_retrieval_mode(bot)
-        elif choice == "4":
-            run_rag_mode(bot, has_llm)
-        elif choice == "5":
-            run_semantic_rag_mode(bot, has_llm)
+        elif choice in ("1", "2", "3", "4", "5"):
+            chunking_strategy = choose_chunking_strategy()
+            bot = DocuBot(
+                llm_client=llm_client,
+                chunking_strategy=chunking_strategy,
+            )
+            if choice == "1":
+                run_naive_llm_mode(bot, has_llm)
+            elif choice == "2":
+                run_retrieval_only_mode(bot)
+            elif choice == "3":
+                run_semantic_retrieval_mode(bot)
+            elif choice == "4":
+                run_rag_mode(bot, has_llm)
+            elif choice == "5":
+                run_semantic_rag_mode(bot, has_llm)
         else:
             print("\nUnknown choice. Please pick 1, 2, 3, 4, 5, or 0.\n")
 

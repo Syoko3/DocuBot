@@ -85,11 +85,30 @@ The web interface also keeps conversation history and shows each message's times
 
 ---
 
+## Chunking strategies
+
+Choose a chunking strategy in the web app's sidebar or when starting the CLI.
+The default is **Structure**, which keeps Markdown headings with their content
+and leaves unheaded text in paragraph-sized chunks. **Fixed-size** creates
+overlapping chunks of up to 1,000 characters with a 200-character overlap.
+**Semantic** groups adjacent sentences using local embedding similarity, with a
+maximum chunk size of 1,000 characters. For documents with enough sentences,
+it uses the lower quartile of adjacent-sentence similarities as its boundary;
+very short documents use a 0.5 cosine-similarity cutoff. **Recursive** splits on
+paragraphs, lines, sentence boundaries, and then spaces to keep chunks at or
+below 1,000 characters where possible. Semantic chunking uses ChromaDB's
+default local embedding model and may download it the first time it is selected.
+
+All retrieval modes use the selected chunks; selecting a different strategy
+rebuilds the chunk index.
+
+---
+
 ## Retrieval scores
 
 Keyword retrieval displays a normalized **retrieval score**: the number of distinct meaningful query terms appearing in an excerpt divided by the number of distinct meaningful query terms in the question. It ranges from `0.0` to `1.0` and is **not** a probability of correctness. Semantic retrieval displays cosine similarity, calculated as `1 - cosine distance` from an in-memory ChromaDB cosine-space collection; higher values indicate greater vector similarity, not answer correctness. ChromaDB's default local embedding model is downloaded on first semantic use.
 
-Both retrieval modes keep Markdown headings with the content up to the next heading, so a retrieved section contains its topic and supporting details. Unheaded text is split into blank-line-separated paragraphs. Each mode returns up to three results. Keyword retrieval requires at least one meaningful query term to match; semantic retrieval ranks sections by embedding-vector cosine similarity. RAG combines the two rankings using reciprocal-rank fusion, while Retrieval Only remains keyword-only.
+The chunk boundaries used by both retrieval modes are controlled by the selected chunking strategy. Each mode returns up to three results. Keyword retrieval requires at least one meaningful query term to match; semantic retrieval ranks sections by embedding-vector cosine similarity. RAG combines the two rankings using reciprocal-rank fusion, while Retrieval Only remains keyword-only.
 
 ---
 
@@ -113,7 +132,7 @@ DocuBot demonstrates keyword and semantic retrieval, plus retrieval-augmented ge
 
 ### Retrieval design
 
-Both retrievers split files into heading-delimited sections, retaining each Markdown heading with its following content; text without headings is split into paragraphs. Keyword retrieval divides the count of distinct meaningful query terms found in a section by the total number of distinct meaningful query terms in the query. Semantic retrieval uses ChromaDB's default local embedding function with cosine distance, converting distance to similarity with `1 - distance`. Each returns up to three sections. RAG fuses the top keyword and semantic rankings with reciprocal-rank fusion, which does not directly compare their different score scales. Retrieval scores are not confidence or correctness probabilities.
+The selected chunking strategy can preserve Markdown structure, split into overlapping fixed-size windows, group adjacent sentences by embedding similarity, or recursively split text on progressively smaller separators. Fixed-size chunks are character-based; semantic and recursive chunks are limited to 1,000 characters, and fixed-size chunks use a 200-character overlap. Semantic chunking and semantic retrieval use ChromaDB's default local embedding function. Keyword retrieval divides the count of distinct meaningful query terms found in a chunk by the total number of distinct meaningful query terms in the query. Semantic retrieval uses cosine distance, converting distance to similarity with `1 - distance`. Each retriever returns up to three chunks. RAG fuses the top keyword and semantic rankings with reciprocal-rank fusion, which does not directly compare their different score scales. Retrieval scores are not confidence or correctness probabilities.
 
 ### LLM behavior
 

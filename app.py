@@ -21,19 +21,28 @@ API_ERROR_PREFIXES = (
     "Unable to generate an answer.",
     "API error — could not generate answer.",
 )
-BOT_CACHE_VERSION = 3
+BOT_CACHE_VERSION = 4
 PACIFIC_TIME = ZoneInfo("America/Los_Angeles")
 MODE_PLACEHOLDER = "Choose a mode"
+CHUNKING_OPTIONS = {
+    "Structure": "structure",
+    "Fixed-size": "fixed_size",
+    "Semantic": "semantic",
+    "Recursive": "recursive",
+}
 
 
 @st.cache_resource
-def create_bot(cache_version=BOT_CACHE_VERSION):
+def create_bot(chunking_strategy="structure", cache_version=BOT_CACHE_VERSION):
     """Cache a DocuBot; cache_version invalidates resources after bot changes."""
     try:
         llm_client = GeminiClient()
     except RuntimeError as exc:
-        return DocuBot(), str(exc)
-    return DocuBot(llm_client=llm_client), None
+        return DocuBot(chunking_strategy=chunking_strategy), str(exc)
+    return DocuBot(
+        llm_client=llm_client,
+        chunking_strategy=chunking_strategy,
+    ), None
 
 
 def _api_error(answer):
@@ -183,14 +192,22 @@ def main():
     st.caption('''
         DocuBot is a small documentation assistant that helps answer developer questions about a codebase.
         It searches the Markdown and text files in `docs/` and can return matching excerpts or use Gemini to produce an answer.
-        Ask questions about the project documentation. You can click the "Clear Conversation" button to clear the conversation.
+        Ask questions about the project documentation. Choose the mode and the chunking strategy to generate the answers.
+        You can click the "Clear Conversation" button to clear the conversation.
         You can also click the "Compare Retrieval-Only vs RAG" button to see how the two modes differ.
         Open the sidebar to view the loaded documents. If you don't have a GEMINI_API_KEY, only retrieval-only and semantic retrieval modes are available.
     ''')
     if "messages" not in st.session_state:
         st.session_state["messages"] = []
 
-    bot, llm_error = create_bot(BOT_CACHE_VERSION)
+    selected_chunking = st.session_state.get(
+        "chunking_strategy_selection", "Structure"
+    )
+    bot, llm_error = create_bot(
+        CHUNKING_OPTIONS[selected_chunking],
+        BOT_CACHE_VERSION,
+    )
+
     with st.sidebar:
         st.header("Uploaded Documents")
         if bot.documents:
@@ -243,6 +260,15 @@ def main():
             help=(
                 "Semantic modes use ChromaDB's local default embedding model. "
                 "The model may download on the first semantic query."
+            ),
+        )
+        st.selectbox(
+            "Chunking strategy",
+            list(CHUNKING_OPTIONS),
+            key="chunking_strategy_selection",
+            help=(
+                "Semantic chunking uses ChromaDB's local embedding model, "
+                "which may download on first use."
             ),
         )
         question = st.text_input(
