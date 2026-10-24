@@ -1,11 +1,11 @@
 """
 Core DocuBot class responsible for:
 - Loading documents from the docs/ folder
-- Building a simple retrieval index (Phase 1)
-- Retrieving relevant snippets (Phase 1 + Phase 3 chunking)
+- Building a simple retrieval index
+- Retrieving relevant snippets (chunking)
 - Retrieving semantically similar snippets with ChromaDB
 - Supporting retrieval only answers
-- Supporting RAG answers when paired with Gemini (Phase 2)
+- Supporting RAG answers when paired with Gemini
 """
 
 import os
@@ -44,10 +44,10 @@ class DocuBot:
         # Load documents into memory
         self.documents = self.load_documents()  # List of (filename, text)
 
-        # Build a retrieval index (implemented in Phase 1)
+        # Build a retrieval index
         self.index = self.build_index(self.documents)
 
-        # Phase 3: pre-split documents into smaller, focused chunks so retrieval
+        # Pre-split documents into smaller, focused chunks so retrieval
         # can return a single relevant section instead of an entire file.
         self.chunks = self._build_chunks(self.documents)
         self._semantic_client = None
@@ -73,7 +73,7 @@ class DocuBot:
         return docs
 
     # -----------------------------------------------------------
-    # Index Construction (Phase 1)
+    # Index Construction
     # -----------------------------------------------------------
 
     def build_index(self, documents):
@@ -90,25 +90,36 @@ class DocuBot:
         return index
 
     # -----------------------------------------------------------
-    # Chunking (Phase 3)
+    # Chunking
     # -----------------------------------------------------------
 
     def _build_chunks(self, documents):
         """
-        Split each document into paragraph-sized chunks (separated by blank
-        lines). Returns a list of (filename, chunk_text). The filename is kept
-        so retrieval results still point back to their source file.
+        Split documents into heading-delimited sections, keeping each heading
+        with its content. Unheaded text remains paragraph-sized. The filename
+        is kept so retrieval results still point back to their source file.
         """
         chunks = []
         for filename, text in documents:
             paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text)]
+            section = []
             for paragraph in paragraphs:
-                if paragraph:
+                if not paragraph:
+                    continue
+                if re.match(r"^#{1,6}\s", paragraph):
+                    if section:
+                        chunks.append((filename, "\n\n".join(section)))
+                    section = [paragraph]
+                elif section:
+                    section.append(paragraph)
+                else:
                     chunks.append((filename, paragraph))
+            if section:
+                chunks.append((filename, "\n\n".join(section)))
         return chunks
 
     # -----------------------------------------------------------
-    # Scoring and Retrieval (Phase 1)
+    # Keyword Retrieval and Scoring
     # -----------------------------------------------------------
 
     def score_document(self, query, text):
@@ -163,6 +174,47 @@ class DocuBot:
             (filename, chunk_text, score)
             for score, filename, chunk_text in scored[:top_k]
         ]
+
+    def rag_retrieve_with_scores(self, query, top_k=3):
+        """
+        Combine keyword and semantic rankings for grounded RAG context.
+
+        Reciprocal-rank fusion combines the two rankings without treating
+        their different score scales as directly comparable.
+        """
+        if top_k <= 0:
+            return []
+
+        candidate_count = top_k * 2
+        rankings = (
+            self.retrieve_with_scores(query, top_k=candidate_count),
+            self.semantic_retrieve_with_scores(query, top_k=candidate_count),
+        )
+        fused_scores = {}
+        rank_constant = 60
+        for ranking in rankings:
+            for rank, (filename, chunk_text, _) in enumerate(ranking, start=1):
+                key = (filename, chunk_text)
+                fused_scores[key] = fused_scores.get(key, 0.0) + (
+                    1.0 / (rank_constant + rank)
+                )
+
+        ranked = sorted(
+            (
+                (score, filename, chunk_text)
+                for (filename, chunk_text), score in fused_scores.items()
+            ),
+            key=lambda item: item[0],
+            reverse=True,
+        )
+        return [
+            (filename, chunk_text, score)
+            for score, filename, chunk_text in ranked[:top_k]
+        ]
+
+    # -----------------------------------------------------------
+    # Semantic Retrieval with ChromaDB
+    # -----------------------------------------------------------
 
     def _get_semantic_collection(self):
         """Create the in-memory Chroma collection with its default local embedder."""
@@ -226,7 +278,7 @@ class DocuBot:
 
     def answer_retrieval_only(self, query, top_k=3):
         """
-        Phase 1 retrieval only mode.
+        Retrieval only mode.
         Returns raw snippets and filenames with no LLM involved.
         """
         snippets = self.retrieve(query, top_k=top_k)
@@ -242,16 +294,21 @@ class DocuBot:
 
     def answer_rag(self, query, top_k=3):
         """
-        Phase 2 RAG mode.
-        Uses student retrieval to select snippets, then asks Gemini
-        to generate an answer using only those snippets.
+        RAG mode.
+        Combines keyword and semantic retrieval, then asks Gemini to answer
+        using only the fused snippets.
         """
         if self.llm_client is None:
             raise RuntimeError(
                 "RAG mode requires an LLM client. Provide a GeminiClient instance."
             )
 
-        snippets = self.retrieve(query, top_k=top_k)
+        snippets = [
+            (filename, text)
+            for filename, text, _ in self.rag_retrieve_with_scores(
+                query, top_k=top_k
+            )
+        ]
 
         if not snippets:
             return "I do not know based on these docs."
@@ -259,7 +316,10 @@ class DocuBot:
         return self.llm_client.answer_from_snippets(query, snippets)
 
     def answer_semantic_rag(self, query, top_k=3):
-        """Retrieve semantically similar snippets, then generate a grounded answer."""
+        """
+        Semantic RAG Mode.
+        Retrieve semantically similar snippets, then generate a grounded answer.
+        """
         if self.llm_client is None:
             raise RuntimeError(
                 "Semantic RAG requires an LLM client. Provide a GeminiClient instance."

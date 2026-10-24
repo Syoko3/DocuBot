@@ -78,7 +78,7 @@ Retrieval-only and semantic retrieval modes work without an API key. Naive LLM a
 | **Naive LLM** | Asks Gemini a question without retrieving project documentation. Use it as an ungrounded baseline. |
 | **Retrieval only** | Finds and displays matching documentation excerpts using keyword overlap. No LLM is used. |
 | **Semantic retrieval** | Uses ChromaDB's default local embedding function and cosine similarity to find semantically related excerpts. No LLM is used. |
-| **RAG** | Retrieves documentation excerpts using keyword overlap, then asks Gemini to answer using those excerpts. |
+| **RAG** | Combines keyword and semantic retrieval rankings, then asks Gemini to answer using the fused excerpts. |
 | **Semantic RAG** | Retrieves excerpts using ChromaDB embeddings and cosine similarity, then asks Gemini to answer using those excerpts. |
 
 The web interface also keeps conversation history and shows each message's timestamp in Pacific Time. Users choose a mode from the **Choose a mode** option before submitting a question. The sidebar provides a **Clear conversation** action and a **Look at documents** browser for the loaded documentation. The app includes an action to compare retrieval-only and RAG results for the same question, as well as example questions including one the documents do not answer.
@@ -89,7 +89,7 @@ The web interface also keeps conversation history and shows each message's times
 
 Keyword retrieval displays a normalized **retrieval score**: the number of distinct meaningful query terms appearing in an excerpt divided by the number of distinct meaningful query terms in the question. It ranges from `0.0` to `1.0` and is **not** a probability of correctness. Semantic retrieval displays cosine similarity, calculated as `1 - cosine distance` from an in-memory ChromaDB cosine-space collection; higher values indicate greater vector similarity, not answer correctness. ChromaDB's default local embedding model is downloaded on first semantic use.
 
-Both retrieval modes split documents into blank-line-separated sections and return up to three results. Keyword retrieval requires at least one meaningful query term to match; semantic retrieval ranks sections by embedding-vector cosine similarity.
+Both retrieval modes keep Markdown headings with the content up to the next heading, so a retrieved section contains its topic and supporting details. Unheaded text is split into blank-line-separated paragraphs. Each mode returns up to three results. Keyword retrieval requires at least one meaningful query term to match; semantic retrieval ranks sections by embedding-vector cosine similarity. RAG combines the two rankings using reciprocal-rank fusion, while Retrieval Only remains keyword-only.
 
 ---
 
@@ -113,11 +113,11 @@ DocuBot demonstrates keyword and semantic retrieval, plus retrieval-augmented ge
 
 ### Retrieval design
 
-Both retrievers split files into paragraph-sized sections. Keyword retrieval divides the count of distinct meaningful query terms found in a section by the total number of distinct meaningful query terms in the query. Semantic retrieval uses ChromaDB's default local embedding function with cosine distance, converting distance to similarity with `1 - distance`. Each returns up to three sections. Neither score is a confidence or correctness probability.
+Both retrievers split files into heading-delimited sections, retaining each Markdown heading with its following content; text without headings is split into paragraphs. Keyword retrieval divides the count of distinct meaningful query terms found in a section by the total number of distinct meaningful query terms in the query. Semantic retrieval uses ChromaDB's default local embedding function with cosine distance, converting distance to similarity with `1 - distance`. Each returns up to three sections. RAG fuses the top keyword and semantic rankings with reciprocal-rank fusion, which does not directly compare their different score scales. Retrieval scores are not confidence or correctness probabilities.
 
 ### LLM behavior
 
-Naive LLM mode does not use retrieved project evidence and may return plausible but unsupported answers. RAG mode passes the retrieved excerpts to Gemini and instructs it to rely on them and to say when the evidence is insufficient. RAG can still produce an incorrect answer, particularly when retrieval returns irrelevant or incomplete context.
+Naive LLM mode does not use retrieved project evidence and may return plausible but unsupported answers. RAG mode fuses keyword and semantic retrieval results, then passes those excerpts to Gemini and instructs it to rely on them and to say when the evidence is insufficient. Gemini requests retry transient HTTP errors up to five attempts, with a maximum eight-second delay between attempts. If Gemini still returns a 503, its service is temporarily overloaded; try the request again shortly. RAG can still produce an incorrect answer, particularly when retrieval returns irrelevant or incomplete context.
 
 ### Limitations and responsible use
 

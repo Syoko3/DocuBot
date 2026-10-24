@@ -3,8 +3,8 @@ Gemini client wrapper used by DocuBot.
 
 Handles:
 - Configuring the Gemini client from the GEMINI_API_KEY environment variable
-- Naive "generation only" answers over the full docs corpus (Phase 0)
-- RAG style answers that use only retrieved snippets (Phase 2)
+- Naive "generation only" answers over the full docs corpus
+- RAG style answers that use only retrieved snippets
 
 Experiment with:
 - Prompt wording
@@ -14,10 +14,20 @@ Experiment with:
 
 import os
 from google import genai
+from google.genai import errors, types
 
-# Central place to update the model name if needed.
-# You can swap this for a different Gemini model in the future.
+# Central place to update the model name if needed. (Swap this for a different Gemini model in the future)
 GEMINI_MODEL_NAME = "gemini-flash-lite-latest"
+RETRYABLE_HTTP_STATUS_CODES = [408, 429, 500, 502, 503, 504]
+
+
+def _generation_error_message(error, prefix):
+    if isinstance(error, errors.ServerError) and error.code == 503:
+        return (
+            f"{prefix} Gemini is temporarily overloaded (503). "
+            "The request was retried; please try again shortly."
+        )
+    return f"{prefix} ({type(error).__name__}: {error})"
 
 
 class GeminiClient:
@@ -39,10 +49,22 @@ class GeminiClient:
                 "Set it in your shell or .env file to enable LLM features."
             )
 
-        self.client = genai.Client(api_key=api_key)
+        self.client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(
+                retry_options=types.HttpRetryOptions(
+                    attempts=5,
+                    initial_delay=1,
+                    max_delay=8,
+                    exp_base=2,
+                    jitter=1,
+                    http_status_codes=RETRYABLE_HTTP_STATUS_CODES,
+                )
+            ),
+        )
 
     # -----------------------------------------------------------
-    # Phase 0: naive generation over full docs
+    # Naive generation over full docs
     # -----------------------------------------------------------
 
     def naive_answer_over_full_docs(self, query, all_text):
@@ -58,15 +80,16 @@ class GeminiClient:
             )
             return (response.text or "").strip()
         except Exception as e:
-            return f"Unable to generate an answer. ({type(e).__name__}: {e})"
+            return _generation_error_message(
+                e, "Unable to generate an answer."
+            )
 
     # -----------------------------------------------------------
-    # Phase 2: RAG style generation over retrieved snippets
+    # RAG style generation over retrieved snippets
     # -----------------------------------------------------------
 
     def answer_from_snippets(self, query, snippets):
         """
-        Phase 2:
         Generate an answer using only the retrieved snippets.
 
         snippets: list of (filename, text) tuples selected by DocuBot.retrieve
@@ -119,4 +142,6 @@ Rules:
             )
             return (response.text or "").strip()
         except Exception as e:
-            return f"API error — could not generate answer. ({type(e).__name__}: {e})"
+            return _generation_error_message(
+                e, "API error — could not generate answer."
+            )

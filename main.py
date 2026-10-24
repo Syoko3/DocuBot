@@ -2,9 +2,12 @@
 CLI runner for the DocuBot.
 
 Supports three modes:
-1. Naive LLM generation over all docs (Phase 0)
-2. Retrieval only (Phase 1)
-3. RAG: retrieval plus LLM generation (Phase 2)
+1. Naive LLM generation over all docs
+2. Retrieval only
+3. Semantic retrieval only (ChromaDB embeddings)
+4. RAG: hybrid keyword and semantic retrieval plus LLM generation
+5. Semantic RAG: semantic retrieval plus LLM generation
+You can run this script with `python main.py` or `python -m docubot.main`.
 """
 
 from dotenv import load_dotenv
@@ -37,18 +40,18 @@ def choose_mode(has_llm):
     """
     print("Choose a mode:")
     if has_llm:
-        print("  1) Naive LLM over full docs (no retrieval)")
+        print("  1) Naive LLM (No Retrieval)")
     else:
-        print("  1) Naive LLM over full docs (unavailable, no GEMINI_API_KEY)")
-    print("  2) Retrieval only (no LLM)")
-    print("  3) Semantic retrieval only (ChromaDB embeddings)")
+        print("  1) Naive LLM (Unavailable, no GEMINI_API_KEY)")
+    print("  2) Retrieval Only (No LLM)")
+    print("  3) Semantic Retrieval Only (ChromaDB Embeddings)")
     if has_llm:
-        print("  4) RAG (retrieval + LLM)")
-        print("  5) Semantic RAG (ChromaDB retrieval + LLM)")
+        print("  4) RAG (Retrieval + LLM, Keyword + Semantic Hybrid)")
+        print("  5) Semantic RAG (ChromaDB Retrieval + LLM)")
     else:
-        print("  4) RAG (unavailable, no GEMINI_API_KEY)")
-        print("  5) Semantic RAG (unavailable, no GEMINI_API_KEY)")
-    print("  99) Quit")
+        print("  4) RAG (Unavailable, No GEMINI_API_KEY)")
+        print("  5) Semantic RAG (Unavailable, No GEMINI_API_KEY)")
+    print("  0) Quit")
 
     choice = input("Enter choice: ").strip().lower()
     return choice
@@ -72,10 +75,7 @@ def get_query_or_use_samples():
 
 
 def run_naive_llm_mode(bot, has_llm):
-    """
-    Mode 1:
-    Naive LLM generation over the full docs corpus.
-    """
+    """Mode 1: Naive LLM generation over the full docs corpus."""
     if not has_llm or bot.llm_client is None:
         print("\nNaive LLM mode is not available (no GEMINI_API_KEY).\n")
         return
@@ -95,10 +95,7 @@ def run_naive_llm_mode(bot, has_llm):
 
 
 def run_retrieval_only_mode(bot):
-    """
-    Mode 2:
-    Retrieval only answers. No LLM involved.
-    """
+    """Mode 2: Retrieval only answers. No LLM involved."""
     queries, label = get_query_or_use_samples()
     print(f"\nRunning retrieval only mode on {label}...\n")
 
@@ -111,11 +108,22 @@ def run_retrieval_only_mode(bot):
         print()
 
 
+def run_semantic_retrieval_mode(bot):
+    """Mode 3: Retrieve relevant snippets using local embedding vectors."""
+    queries, label = get_query_or_use_samples()
+    print(f"\nRunning semantic retrieval mode on {label}...\n")
+
+    for query in queries:
+        print("=" * 60)
+        print(f"Question: {query}\n")
+        for filename, text, score in bot.semantic_retrieve_with_scores(query):
+            print(f"[{filename}] cosine similarity: {score:.4f}")
+            print(text)
+            print()
+
+
 def run_rag_mode(bot, has_llm):
-    """
-    Mode 3:
-    Retrieval plus LLM generation.
-    """
+    """Mode 4: Hybrid retrieval plus Gemini answer generation."""
     if not has_llm or bot.llm_client is None:
         print("\nRAG mode is not available (no GEMINI_API_KEY).\n")
         return
@@ -131,23 +139,8 @@ def run_rag_mode(bot, has_llm):
         print(answer)
         print()
 
-
-def run_semantic_retrieval_mode(bot):
-    """Mode 4: retrieve relevant snippets using local embedding vectors."""
-    queries, label = get_query_or_use_samples()
-    print(f"\nRunning semantic retrieval mode on {label}...\n")
-
-    for query in queries:
-        print("=" * 60)
-        print(f"Question: {query}\n")
-        for filename, text, score in bot.semantic_retrieve_with_scores(query):
-            print(f"[{filename}] cosine similarity: {score:.4f}")
-            print(text)
-            print()
-
-
 def run_semantic_rag_mode(bot, has_llm):
-    """Mode 5: semantic retrieval followed by Gemini answer generation."""
+    """Mode 5: Semantic retrieval followed by Gemini answer generation."""
     if not has_llm or bot.llm_client is None:
         print("\nSemantic RAG is not available (no GEMINI_API_KEY).\n")
         return
@@ -164,8 +157,8 @@ def run_semantic_rag_mode(bot, has_llm):
 
 
 def main():
-    print("DocuBot")
-    print("=======\n")
+    print("Welcome to DocuBot command line interface.")
+    print("==========================================\n")
 
     llm_client, has_llm = try_create_llm_client()
     bot = DocuBot(llm_client=llm_client)
@@ -173,7 +166,7 @@ def main():
     while True:
         choice = choose_mode(has_llm)
 
-        if choice == "99":
+        if choice == "0":
             print("\nGoodbye.")
             break
         elif choice == "1":
@@ -181,13 +174,13 @@ def main():
         elif choice == "2":
             run_retrieval_only_mode(bot)
         elif choice == "3":
-            run_rag_mode(bot, has_llm)
-        elif choice == "4":
             run_semantic_retrieval_mode(bot)
+        elif choice == "4":
+            run_rag_mode(bot, has_llm)
         elif choice == "5":
             run_semantic_rag_mode(bot, has_llm)
         else:
-            print("\nUnknown choice. Please pick 1, 2, 3, 4, 5, or 99.\n")
+            print("\nUnknown choice. Please pick 1, 2, 3, 4, 5, or 0.\n")
 
 
 if __name__ == "__main__":

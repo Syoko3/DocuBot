@@ -18,10 +18,10 @@ UNKNOWN_ANSWER = "I don't know based on these docs."
 SUPPORTED_EXAMPLE = SAMPLE_QUERIES[2]
 UNANSWERABLE_EXAMPLE = "Is there any mention of payment processing in these docs?"
 API_ERROR_PREFIXES = (
-    "Unable to generate an answer. (",
-    "API error — could not generate answer. (",
+    "Unable to generate an answer.",
+    "API error — could not generate answer.",
 )
-BOT_CACHE_VERSION = 2
+BOT_CACHE_VERSION = 3
 PACIFIC_TIME = ZoneInfo("America/Los_Angeles")
 MODE_PLACEHOLDER = "Choose a mode"
 
@@ -56,14 +56,16 @@ def _answer_for_mode(bot, mode, question):
         )
         return answer, [], _api_error(answer)
 
-    semantic = mode in ("Semantic retrieval", "Semantic RAG")
-    retrieve = (
-        bot.semantic_retrieve_with_scores if semantic
-        else bot.retrieve_with_scores
-    )
+    semantic = mode in ("Semantic Retrieval", "Semantic RAG")
+    if semantic:
+        retrieve = bot.semantic_retrieve_with_scores
+    elif mode == "RAG":
+        retrieve = bot.rag_retrieve_with_scores
+    else:
+        retrieve = bot.retrieve_with_scores
     scored_sources = retrieve(question)
     sources = [(filename, text) for filename, text, _ in scored_sources]
-    if mode in ("Retrieval only", "Semantic retrieval"):
+    if mode in ("Retrieval Only", "Semantic Retrieval"):
         answer = (
             f"Retrieved {len(sources)} relevant section(s)."
             if sources
@@ -80,7 +82,7 @@ def _answer_for_mode(bot, mode, question):
 
 def _run_comparison(bot, question):
     """Run retrieval-only and RAG using the same question and sources."""
-    scored_sources = bot.retrieve_with_scores(question)
+    scored_sources = bot.rag_retrieve_with_scores(question)
     sources = [(filename, text) for filename, text, _ in scored_sources]
     if not scored_sources:
         return {
@@ -99,7 +101,7 @@ def _run_comparison(bot, question):
     }
 
 
-def _display_sources(sources, semantic=False):
+def _display_sources(sources, semantic=False, hybrid=False):
     """Display retrieved text, source filename, and the retrieval score."""
     if not sources:
         st.info("No relevant sources were retrieved.")
@@ -107,6 +109,11 @@ def _display_sources(sources, semantic=False):
 
     if semantic:
         st.caption("Cosine similarity scores range from -1 to 1; higher is more similar.")
+    elif hybrid:
+        st.caption(
+            "Reciprocal-rank fusion combines keyword and semantic rankings; "
+            "these scores rank retrieved sections and are not probabilities."
+        )
     else:
         st.caption(
             "Keyword scores are the fraction of distinct meaningful query "
@@ -116,6 +123,7 @@ def _display_sources(sources, semantic=False):
         for index, (filename, text, score) in enumerate(sources, start=1):
             score_label = (
                 "Cosine similarity" if semantic
+                else "Reciprocal-rank fusion" if hybrid
                 else "Normalized keyword overlap"
             )
             score_value = f"{score:.4f}"
@@ -136,16 +144,16 @@ def _display_messages():
 
         with st.chat_message("assistant"):
             st.caption(
-                "Retrieval-only vs RAG comparison"
+                "Retrieval-Only vs RAG comparison"
                 if message["comparison"] is not None
                 else message["mode"]
             )
             if message["comparison"] is not None:
                 comparison = message["comparison"]
-                _display_sources(comparison["sources"])
+                _display_sources(comparison["sources"], hybrid=True)
                 retrieval_column, rag_column = st.columns(2)
                 with retrieval_column:
-                    st.markdown("**Retrieval only**")
+                    st.markdown("**Retrieval Only**")
                     st.write(comparison["retrieval_answer"])
                 with rag_column:
                     st.markdown("**RAG**")
@@ -158,9 +166,10 @@ def _display_messages():
                     _display_sources(
                         message["sources"],
                         semantic=message["mode"] in (
-                            "Semantic retrieval",
+                            "Semantic Retrieval",
                             "Semantic RAG",
                         ),
+                        hybrid=message["mode"] == "RAG",
                     )
                 if message["error"]:
                     st.error(message["answer"])
@@ -175,7 +184,7 @@ def main():
         DocuBot is a small documentation assistant that helps answer developer questions about a codebase.
         It searches the Markdown and text files in `docs/` and can return matching excerpts or use Gemini to produce an answer.
         Ask questions about the project documentation. You can click the "Clear Conversation" button to clear the conversation.
-        You can also click the "Compare retrieval-only vs RAG" button to see how the two modes differ.
+        You can also click the "Compare Retrieval-Only vs RAG" button to see how the two modes differ.
         Open the sidebar to view the loaded documents. If you don't have a GEMINI_API_KEY, only retrieval-only and semantic retrieval modes are available.
     ''')
     if "messages" not in st.session_state:
@@ -224,8 +233,8 @@ def main():
             [
                 MODE_PLACEHOLDER,
                 "Naive LLM",
-                "Retrieval only",
-                "Semantic retrieval",
+                "Retrieval Only",
+                "Semantic Retrieval",
                 "RAG",
                 "Semantic RAG",
             ],
@@ -246,12 +255,12 @@ def main():
             submitted = st.form_submit_button("Ask")
         with compare_clicked:
             compare = st.form_submit_button(
-                "Compare retrieval-only vs RAG",
+                "Compare Retrieval-Only vs RAG",
                 disabled=bot.llm_client is None,
             )
         with reset:
             st.form_submit_button(
-                "Clear conversation",
+                "Clear Conversation",
                 on_click=_clear_conversation,
             )
 
@@ -268,7 +277,7 @@ def main():
             )
         elif (
             not compare
-            and mode not in (MODE_PLACEHOLDER, "Retrieval only", "Semantic retrieval")
+            and mode not in (MODE_PLACEHOLDER, "Retrieval Only", "Semantic Retrieval")
             and bot.llm_client is None
         ):
             timestamp = datetime.now(PACIFIC_TIME).strftime(

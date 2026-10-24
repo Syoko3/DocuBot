@@ -1,12 +1,11 @@
 """
 Optional helper module containing:
 - SAMPLE_QUERIES used during the activity
-- FALLBACK_DOCS, an in memory documentation corpus used if the docs/ folder
-  is missing or cannot be loaded
+- FALLBACK_DOCS, an in memory documentation corpus used if the docs/ folder is missing or cannot be loaded
 """
 
 # -----------------------------------------------------------
-# Sample queries used throughout Phase 0, 1, and 2
+# Sample queries
 # -----------------------------------------------------------
 
 SAMPLE_QUERIES = [
