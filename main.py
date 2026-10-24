@@ -46,7 +46,7 @@ def choose_mode(has_llm):
     print("  2) Retrieval Only (No LLM)")
     print("  3) Semantic Retrieval Only (ChromaDB Embeddings)")
     if has_llm:
-        print("  4) RAG (Retrieval + LLM, Keyword + Semantic Hybrid)")
+        print("  4) RAG (Retrieval + LLM)")
         print("  5) Semantic RAG (ChromaDB Retrieval + LLM)")
     else:
         print("  4) RAG (Unavailable, No GEMINI_API_KEY)")

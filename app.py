@@ -224,8 +224,7 @@ def main():
             if selected_filename == document_options[0]:
                 st.caption("No documents selected.")
             else:
-                with st.expander(f"{selected_filename}", expanded=True):
-                    st.markdown(documents_by_name[selected_filename])
+                st.markdown(documents_by_name[selected_filename])
         else:
             st.info("No documents were loaded.")
 
