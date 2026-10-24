@@ -192,7 +192,7 @@ def main():
     st.caption('''
         DocuBot is a small documentation assistant that helps answer developer questions about a codebase.
         It searches the Markdown and text files in `docs/` and can return matching excerpts or use Gemini to produce an answer.
-        Ask questions about the project documentation. Choose the mode and the chunking strategy to generate the answers.
+        Choose the mode and the chunking strategy, and ask questions about the project documentation.
         You can click the "Clear Conversation" button to clear the conversation.
         You can also click the "Compare Retrieval-Only vs RAG" button to see how the two modes differ.
         Open the sidebar to view the loaded documents. If you don't have a GEMINI_API_KEY, only retrieval-only and semantic retrieval modes are available.
