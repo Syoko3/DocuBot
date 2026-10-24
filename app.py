@@ -236,8 +236,8 @@ def main():
             "without one. Selecting an LLM mode will show an error."
         )
 
-    with st.expander("Example questions"):
-        st.caption("Supported example")
+    with st.expander("Example Questions"):
+        st.caption("Supported Example")
         if st.button("Use: " + SUPPORTED_EXAMPLE, key="supported_example"):
             st.session_state["question_input"] = SUPPORTED_EXAMPLE
         st.caption("Example not covered by the documents")
@@ -263,7 +263,7 @@ def main():
             ),
         )
         st.selectbox(
-            "Chunking strategy",
+            "Chunking Strategy",
             list(CHUNKING_OPTIONS),
             key="chunking_strategy_selection",
             help=(
