@@ -61,7 +61,7 @@ The command-line interface is also available:
 python main.py
 ```
 
-Retrieval-only and semantic retrieval modes work without an API key. Naive LLM and both RAG modes, and the retrieval-versus-RAG comparison, require `GEMINI_API_KEY`.
+Retrieval-only and semantic retrieval modes work without an API key. Naive LLM and both RAG modes, and the retrieval and RAG comparison, require `GEMINI_API_KEY`.
 
 ---
 
@@ -75,7 +75,7 @@ Retrieval-only and semantic retrieval modes work without an API key. Naive LLM a
 | **RAG** | Combines keyword and semantic retrieval rankings, then asks Gemini to answer using the fused excerpts. |
 | **Semantic RAG** | Retrieves excerpts using ChromaDB embeddings and cosine similarity, then asks Gemini to answer using those excerpts. |
 
-The web interface also keeps conversation history and shows each message's timestamp in Pacific Time. Users choose a mode from the **Choose a mode** option before submitting a question. The sidebar provides a **Clear Conversation** action and a **Look at documents** browser for the loaded documentation. The app includes an action to compare retrieval-only and RAG results for the same question, as well as example questions including one the documents do not answer.
+The web interface also keeps conversation history and shows each message's timestamp in Pacific Time. Users choose a mode from the **Choose a mode** option before submitting a question. The sidebar provides a **Clear Conversation** action and a **Look at documents** browser for the loaded documentation. The app can compare keyword retrieval with semantic retrieval and RAG with semantic RAG for the same question, as well as provide example questions including one the documents do not answer.
 
 ---
 

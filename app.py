@@ -90,23 +90,36 @@ def _answer_for_mode(bot, mode, question):
 
 
 def _run_comparison(bot, question):
-    """Run retrieval-only and RAG using the same question and sources."""
-    scored_sources = bot.rag_retrieve_with_scores(question)
-    sources = [(filename, text) for filename, text, _ in scored_sources]
-    if not scored_sources:
-        return {
-            "sources": [],
-            "retrieval_answer": UNKNOWN_ANSWER,
-            "rag_answer": UNKNOWN_ANSWER,
-            "rag_error": False,
-        }
+    """Compare keyword and semantic retrieval, then their RAG answers."""
+    keyword_sources = bot.retrieve_with_scores(question)
+    semantic_sources = bot.semantic_retrieve_with_scores(question)
+    rag_sources = bot.rag_retrieve_with_scores(question)
 
-    rag_answer = bot.llm_client.answer_from_snippets(question, sources)
+    def generate(scored_sources):
+        sources = [(filename, text) for filename, text, _ in scored_sources]
+        if not sources:
+            return UNKNOWN_ANSWER, False
+        answer = bot.llm_client.answer_from_snippets(question, sources)
+        return answer, _api_error(answer)
+
+    rag_answer, rag_error = generate(rag_sources)
+    semantic_rag_answer, semantic_rag_error = generate(semantic_sources)
     return {
-        "sources": scored_sources,
-        "retrieval_answer": f"Retrieved {len(sources)} relevant section(s).",
+        "keyword_sources": keyword_sources,
+        "semantic_sources": semantic_sources,
+        "rag_sources": rag_sources,
+        "keyword_answer": (
+            f"Retrieved {len(keyword_sources)} relevant section(s)."
+            if keyword_sources else UNKNOWN_ANSWER
+        ),
+        "semantic_answer": (
+            f"Retrieved {len(semantic_sources)} relevant section(s)."
+            if semantic_sources else UNKNOWN_ANSWER
+        ),
         "rag_answer": rag_answer,
-        "rag_error": _api_error(rag_answer),
+        "rag_error": rag_error,
+        "semantic_rag_answer": semantic_rag_answer,
+        "semantic_rag_error": semantic_rag_error,
     }
 
 
@@ -153,23 +166,37 @@ def _display_messages():
 
         with st.chat_message("assistant"):
             st.caption(
-                "Retrieval-Only vs RAG comparison"
+                "Keyword vs Semantic Retrieval and RAG comparison"
                 if message["comparison"] is not None
                 else message["mode"]
             )
             if message["comparison"] is not None:
                 comparison = message["comparison"]
-                _display_sources(comparison["sources"], hybrid=True)
-                retrieval_column, rag_column = st.columns(2)
-                with retrieval_column:
-                    st.markdown("**Retrieval Only**")
-                    st.write(comparison["retrieval_answer"])
+                keyword_column, semantic_column = st.columns(2)
+                with keyword_column:
+                    st.markdown("**Keyword Retrieval**")
+                    _display_sources(comparison["keyword_sources"])
+                    st.write(comparison["keyword_answer"])
+                with semantic_column:
+                    st.markdown("**Semantic Retrieval**")
+                    _display_sources(comparison["semantic_sources"], semantic=True)
+                    st.write(comparison["semantic_answer"])
+
+                rag_column, semantic_rag_column = st.columns(2)
                 with rag_column:
-                    st.markdown("**RAG**")
+                    st.markdown("**RAG (keyword + semantic retrieval)**")
+                    _display_sources(comparison["rag_sources"], hybrid=True)
                     if comparison["rag_error"]:
                         st.error(comparison["rag_answer"])
                     else:
                         st.write(comparison["rag_answer"])
+                with semantic_rag_column:
+                    st.markdown("**Semantic RAG**")
+                    _display_sources(comparison["semantic_sources"], semantic=True)
+                    if comparison["semantic_rag_error"]:
+                        st.error(comparison["semantic_rag_answer"])
+                    else:
+                        st.write(comparison["semantic_rag_answer"])
             else:
                 if message["mode"] != "Naive LLM":
                     _display_sources(
@@ -192,10 +219,11 @@ def main():
     st.caption('''
         DocuBot is a small documentation assistant that helps answer developer questions about a codebase.
         It searches the Markdown and text files in `docs/` and can return matching excerpts or use Gemini to produce an answer.
-        Choose the mode and the chunking strategy, and ask questions about the project documentation.
-        You can click the "Clear Conversation" button to clear the conversation.
-        You can also click the "Compare Retrieval-Only vs RAG" button to see how the two modes differ.
-        Open the sidebar to view the loaded documents. If you don't have a GEMINI_API_KEY, only retrieval-only and semantic retrieval modes are available.
+        The user has to choose the mode and the chunking strategy, and then ask questions about the project documentation.
+        The user can click also compare keyword retrieval with semantic retrieval, and compare RAG with semantic RAG, for the same question.
+        The user can also click the trash can icon to clear the conversation and start over.
+        The user can open the sidebar and view the loaded documents. This app requires GEMINI_API_KEY, so if the user don't have a key,
+        only retrieval-only and semantic retrieval modes are available.
     ''')
     if "messages" not in st.session_state:
         st.session_state["messages"] = []
@@ -275,17 +303,18 @@ def main():
             key="question_input",
             placeholder="Ask a documentation question...",
         )
-        ask_clicked, compare_clicked, reset = st.columns(3)
+        ask_clicked, compare_clicked, reset = st.columns([1, 3, 1])
         with ask_clicked:
             submitted = st.form_submit_button("Ask")
         with compare_clicked:
             compare = st.form_submit_button(
-                "Compare Retrieval-Only vs RAG",
+                "Keyword vs. Semantic Retrieval and RAG Comparison",
                 disabled=bot.llm_client is None,
             )
         with reset:
             st.form_submit_button(
-                "Clear Conversation",
+                "🗑️",
+                help="Clear conversation",
                 on_click=_clear_conversation,
             )
 
